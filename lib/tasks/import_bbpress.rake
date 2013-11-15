@@ -54,15 +54,20 @@ namespace :import do
 
         exit_script
       else
-        puts "\nBacking up Discourse settings".yellow
+        puts "\n*** Backing up Discourse settings".yellow
         dc_backup_site_settings # back up site settings
 
-        puts "\nSetting Discourse site settings".yellow
+        puts "\n*** Setting Discourse site settings".yellow
         dc_set_temporary_site_settings # set site settings we need
 
-        puts "\nCreating Discourse users".yellow
+        puts "\n*** Creating Discourse users".yellow
         create_users
 
+        puts "\n*** Importing posts into Discourse".yellow
+        sql_import_posts
+
+        puts "\n*** Restoring settings".yellow
+        dc_restore_site_settings
       end
 
     ensure
@@ -131,6 +136,107 @@ EOQ
     break if count == 0 or count < 500
   end
   puts "\nNumber of posts: #{@bbpress_posts.count.to_s}".green
+end
+
+def sql_import_posts
+  post_count = 0
+  topics = {}
+  @bbpress_posts.each do |bbpress_post|
+    post_count += 1
+
+    # details on writer of the post
+    user = @bbpress_users.find {|k| k['user_login'] == bbpress_post['user_login']}
+
+    if user.nil?
+      puts "Warning: User (#{bbpress_post['id']}) #{bbpress_post['user_login']} not found in user list!".red
+    end
+
+    # get the discourse user of this post
+    dc_user = dc_get_user(bbpress_username_to_dc(user['user_login']))
+
+    category = create_category(
+      bbpress_post['forum_name'].downcase,
+      DC_ADMIN
+    )
+
+    topic_title = sanitize_topic bbpress_post['topic_title']
+
+    is_new_topic = false
+    topic = topics[bbpress_post['topic_id']]
+    if topic.nil?
+      is_new_topic = true
+    end
+
+    progress = post_count.percent_of(@bbpress_posts.count).round.to_s
+
+    text = sanitize_text bbpress_post['post_text']
+
+    # create!
+    post_creator = nil
+
+    if is_new_topic
+      print "\n[#{progress}%] Creating topic ".yellow + topic_title +
+        " (#{Time.at(bbpress_post['post_time'])}) in category ".yellow +
+          "#{category.name}"
+          post_creator = PostCreator.new(
+            dc_user,
+            raw: text,
+            title: topic_title,
+            archetype: 'regular',
+            category: category.name,
+            created_at: Time.at(bbpress_post['post_time']),
+            updated_at: Time.at(bbpress_post['post_time'])
+          )
+
+          # for a new topic: also clear mail deliveries
+          ActionMailer::Base.deliveries = []
+    else
+      print ".".yellow
+      $stdout.flush
+      post_creator = PostCreator.new(
+        dc_user,
+        raw: text,
+        topic_id: topic,
+        created_at: Time.at(bbpress_post['post_time']),
+        updated_at: Time.at(bbpress_post['post_time'])
+      )
+    end
+
+    post = nil
+
+    begin
+      post = post_creator.create
+    rescue Exception => e
+      puts "Error #{e} on post #{bbpress_post['post_id']}:\n#{text}"
+      puts "--"
+      puts e.inspect
+      puts e.backtrace
+      abort
+    end
+
+    # Everything set, save the topic
+    if post_creator.errors.present? # Skip if not valid for some reason
+      puts "\nContents of topic from post #{bbpress_post['post_id']} failed to ".red+
+        "import: #{post_creator.errors.full_messages}".red
+    else
+      post_serializer = PostSerializer.new(post, scope: true, root: false)
+      post_serializer.topic_slug = post.topic.slug if post.topic.present?
+      post_serializer.draft_sequence = DraftSequence.current(dc_user, post.topic.draft_key)
+      #save id to hash
+      topics[bbpress_post['topic_id']] = post.topic.id if is_new_topic
+      puts "\nTopic #{bbpress_post['post_id']} created".green if is_new_topic
+    end
+  end
+end
+
+# Returns a Discourse category where imported posts will go
+def create_category(name, owner)
+  if Category.where('name = ?', name).empty? then
+    puts "\nCreating category '#{name}'".yellow
+    Category.create!(name: name, user_id: owner.id)
+  else
+    Category.where('name = ?', name).first
+  end
 end
 
 def create_users
@@ -205,6 +311,76 @@ EOQ
 
 end
 
+def sanitize_topic(text)
+  CGI.unescapeHTML(text)
+end
+
+def sanitize_text(text)
+  text = CGI.unescapeHTML(text)
+
+  # screaming
+  unless seems_quiet?(text)
+    text = '<capslock> ' + text.downcase
+  end
+
+  unless seems_pronounceable?(text)
+    text = "<symbols>\n" + text
+  end
+
+  # remove tag IDs
+  text.gsub! /\[(\/?[a-zA-Z]+(=("[^"]*?"|[^\]]*?))?):[a-z0-9]+\]/, '[\1]'
+
+  # completely remove youtube, soundcloud and url tags as those links are oneboxed
+  text.gsub! /\[(youtube|soundcloud|url|img)\](.*?)\[\/\1\]/m, "\n"+'\2'+"\n"
+
+  # yt tags are custom for our forum
+  text.gsub! /\[yt\]([a-zA-Z0-9_-]{11})\[\/yt\]/, ' http://youtu.be/\1 '
+
+  # convert newlines to markdown syntax
+  text.gsub! /([^\n])\n/, '\1  '+"\n" if MARKDOWN_LINEBREAKS
+
+  # strange links (maybe soundcloud)
+  # <!-- m --><a class="postlink" href="http://link">http://link</a><!-- m -->
+  text.gsub! /<!-- m --><a class="postlink" href="(.*?)">.*?<\/a><!-- m -->/m, ' \1 '
+
+  # convert code blocks to markdown syntax
+  text.gsub! /\[code\](.*?)\[\/code\]/m do |match|
+    "\n    " + $1.gsub(/(  )?\n(.)/, "\n"+'    \2') + "\n"
+  end
+
+  # size tags
+  # discourse likes numbers from 4-40 (pt), phpbb uses 20 to 200 (percent)
+  # [size=85:az5et819]dump dump[/size:az5et819]
+  text.gsub! /\[size=(\d+)(%?)\]/ do |match|
+    pt = $1.to_i / 100 * 14 # 14 is the default text size
+    pt = 40 if pt > 40
+    pt = 4 if pt < 4
+
+    "[size=#{pt}]"
+  end
+
+  # edit invalid quotes
+  text.gsub! /\[quote\]/, '[quote=""]'
+
+  text
+end
+
+### Methods adapted from lib/text_sentinel.rb
+def seems_quiet?(text)
+  # We don't allow all upper case content in english
+  not((text =~ /[A-Z]+/) && !(text =~ /[^[:ascii:]]/) && (text == text.upcase))
+end
+
+def seems_pronounceable?(text)
+  # At least some non-symbol characters
+  # (We don't have a comprehensive list of symbols, but this will eliminate some noise)
+  text.gsub(symbols_regex, '').size > 0
+end
+
+def symbols_regex
+  /[\ -\/\[-\`\:-\@\{-\~]/m
+end
+
 # Checks if Discourse admin user exists
 def discourse_admin_exists?
 end
@@ -251,6 +427,24 @@ def dc_backup_site_settings
   @site_settings = s
 end
 
+def dc_restore_site_settings
+  s = @site_settings
+  SiteSetting.send("unique_posts_mins=", s['unique_posts_mins'])
+  SiteSetting.send("rate_limit_create_topic=", s['rate_limit_create_topic'])
+  SiteSetting.send("rate_limit_create_post=", s['rate_limit_create_post'])
+  SiteSetting.send("max_topics_per_day=", s['max_topics_per_day'])
+  SiteSetting.send("title_min_entropy=", s['title_min_entropy'])
+  SiteSetting.send("body_min_entropy=", s['body_min_entropy'])
+  SiteSetting.send("min_post_length=", s['min_post_length'])
+  SiteSetting.send("newuser_spam_host_threshold=", s['newuser_spam_host_threshold'])
+  SiteSetting.send("min_topic_title_length=", s['min_topic_title_length'])
+  SiteSetting.send("newuser_max_links=", s['newuser_max_links'])
+  SiteSetting.send("newuser_max_images=", s['newuser_max_images'])
+  SiteSetting.send("max_word_length=", s['max_word_length'])
+  SiteSetting.send("email_time_window_mins=", s['email_time_window_mins'])
+  SiteSetting.send("max_topic_title_length=", s['max_topic_title_length'])
+end
+
 def dc_user_exists?(name)
   User.where('username = ?', name).exists?
 end
@@ -259,7 +453,7 @@ def db_get_user_id(name)
   User.where('username = ?', name).first.id
 end
 
-def dc_get_user(user)
+def dc_get_user(name)
   User.where('username = ?', name).first
 end
 
