@@ -38,9 +38,10 @@ namespace :import do
       print "y/N? > "
       input = STDIN.gets.chomp
       MARKDOWN_LINEBREAKS = ( /y(es)?/i.match(input) or input.empty? )
-      puts "Using markdown linebreaks: " + MARKDOWN_LINEBREAKS.to_s.green
+      puts "\nUsing markdown linebreaks: " + MARKDOWN_LINEBREAKS.to_s.green
 
       sql_connect
+      sql_fetch_users
 
     end
 
@@ -69,6 +70,32 @@ def sql_connect
   puts "\nConnected to SQL DB".green
 end
 
+def sql_fetch_users
+  @bbpress_users ||= []
+
+  offset = 0
+  loop do
+    count = 0
+    query = <<EOQ
+      SELECT id, user_login, user_pass, user_nicename, user_email, user_url, user_registered, user_status, display_name
+      FROM bb_users
+      LIMIT #{offset}, 50;
+EOQ
+
+    puts query.yellow if offset == 0
+    users = @sql.query query
+    users.each do |user|
+      @bbpress_users << user
+      count += 1
+    end
+
+    offset += count
+    break if count == 0
+  end
+
+  puts "Number of users: #{@bbpress_users.count.to_s}".green
+
+end
 
 # Checks if Discourse admin user exists
 def discourse_admin_exists?
