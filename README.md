@@ -10,10 +10,8 @@ users will need to log in to activate their accounts.
 * There is a `test` mode to test the connection to the mysql server and
   read posts
 
-
 **Use at your onw risk!** Seriously, test this on a dummy Discourse
 installation first.
-
 
 # Instructions
 
@@ -41,15 +39,14 @@ $ mailcatcher --http-ip 0.0.0.0
 
 * Install the `mysql2` gem:
 
-```
-$ bundle
+```shell
+$ bundle install
 ```
 
 **Note:** You may need to install the header files for mysql. For OS X,
 you can do this with `brew install mysql`; for Debian, `sudo apt-get
 install libmysqlclient-dev`; on CentOS/RHEL, `sudo yum install
 mysql-devel`.
-
 
 * Copy `config/import_bbpress.yml` to your `discourse/config` directory
 * Copy `lib/tasks/import_bbpress.rake` to your `discourse/lib/tasks/`
