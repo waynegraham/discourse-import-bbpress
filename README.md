@@ -66,7 +66,6 @@ instance: `export RAILS_DB=<your_database> rake import:bbpress`
 
 # Contributing
 
-
 Please make all pull requests to the develop branch. And example process
 for making a pull request:
 
