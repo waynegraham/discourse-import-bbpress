@@ -41,7 +41,7 @@ $ mailcatcher --http-ip 0.0.0.0
 * Install the `mysql2` gem:
 
 ```shell
-$ bundle install mysql2
+$ bundle install
 ```
 
 **Note:** You may need to install the header files for mysql. For OS X,
