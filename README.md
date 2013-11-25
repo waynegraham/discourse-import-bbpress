@@ -10,7 +10,7 @@ users will need to log in to activate their accounts.
 * There is a `test` mode to test the connection to the mysql server and
   read posts
 
-**Use at your onw risk!** Seriously, test this on a dummy Discourse
+**Use at your own risk!** Seriously, test this on a dummy Discourse
 installation first.
 
 # Instructions
@@ -24,7 +24,8 @@ config.action_mailer.delivery_method = :test
 config.action_mailer.smtp_settings = { address: "localhost", port: 1025 }
 ```
 
-Install and start `mailcatcher` to see when all mails have been sent:
+Install and start `mailcatcher` to monitor the sending of notification
+emails:
 
 ```shell
 $ gem install mailcatcher
@@ -40,7 +41,7 @@ $ mailcatcher --http-ip 0.0.0.0
 * Install the `mysql2` gem:
 
 ```shell
-$ bundle install
+$ bundle install mysql2
 ```
 
 **Note:** You may need to install the header files for mysql. For OS X,
