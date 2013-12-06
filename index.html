@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href='https://fonts.googleapis.com/css?family=Architects+Daughter' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen" />
+    <link rel="stylesheet" type="text/css" href="stylesheets/pygment_trac.css" media="screen" />
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print" />
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <title>Discourse-import-bbpress by waynegraham</title>
+  </head>
+
+  <body>
+    <header>
+      <div class="inner">
+        <h1>Discourse-import-bbpress</h1>
+        <h2>bbPress importer for Discourse</h2>
+        <a href="https://github.com/waynegraham/discourse-import-bbpress" class="button"><small>View project on</small>GitHub</a>
+      </div>
+    </header>
+
+    <div id="content-wrapper">
+      <div class="inner clearfix">
+        <section id="main-content">
+          <h1>
+<a name="what-is-this" class="anchor" href="#what-is-this"><span class="octicon octicon-link"></span></a>What is this</h1>
+
+<p>This set of rake tasks imports users, threads, and posts from a bbPress
+instance into Discourse.</p>
+
+<ul>
+<li>Post dates and authors are preserved</li>
+<li>User accounts are created from bbPress, but have no login
+capabilities. The emails addresses are set, and gravatars work, but
+users will need to log in to activate their accounts.</li>
+<li>There is a <code>test</code> mode to test the connection to the mysql server and
+read posts</li>
+</ul><p><strong>Use at your own risk!</strong> Seriously, test this on a dummy Discourse
+installation first.</p>
+
+<h1>
+<a name="instructions" class="anchor" href="#instructions"><span class="octicon octicon-link"></span></a>Instructions</h1>
+
+<ul>
+<li>
+<strong>Important:</strong> <em>disable</em> your email configuration or ou will spam all
+your users with hundreds of emails. To do this, add this to your
+environemnt config (e.g. <code>config/environments/development.rb</code>):</li>
+</ul><div class="highlight highlight-ruby"><pre><span class="n">config</span><span class="o">.</span><span class="n">action_mailer</span><span class="o">.</span><span class="n">delivery_method</span> <span class="o">=</span> <span class="ss">:test</span>
+<span class="n">config</span><span class="o">.</span><span class="n">action_mailer</span><span class="o">.</span><span class="n">smtp_settings</span> <span class="o">=</span> <span class="p">{</span> <span class="ss">address</span><span class="p">:</span> <span class="s2">"localhost"</span><span class="p">,</span> <span class="ss">port</span><span class="p">:</span> <span class="mi">1025</span> <span class="p">}</span>
+</pre></div>
+
+<p>Install and start <code>mailcatcher</code> to monitor the sending of notification
+emails:</p>
+
+<pre lang="shell"><code>$ gem install mailcatcher
+$ mailcatcher --http-ip 0.0.0.0
+</code></pre>
+
+<ul>
+<li><p>Be sure to have at least one user in your Discourse instance. If not,
+create one and set the username in <code>config/import_bbpress.yml</code>.</p></li>
+<li><p>Edit <code>config/import_bbpress.yml</code> with your database connection
+information and <code>discourse_admin</code> username.</p></li>
+<li><p>Install the <code>mysql2</code> gem:</p></li>
+</ul><pre lang="shell"><code>$ bundle install
+</code></pre>
+
+<p><strong>Note:</strong> You may need to install the header files for mysql. For OS X,
+you can do this with <code>brew install mysql</code>; for Debian, <code>sudo apt-get
+install libmysqlclient-dev</code>; on CentOS/RHEL, <code>sudo yum install
+mysql-devel</code>.</p>
+
+<ul>
+<li>Copy <code>config/import_bbpress.yml</code> to your <code>discourse/config</code> directory</li>
+<li>Copy <code>lib/tasks/import_bbpress.rake</code> to your <code>discourse/lib/tasks/</code>
+directory</li>
+<li>In your discourse instance, run <code>rake import:bbpress</code>
+</li>
+</ul><p><strong>Note:</strong> if you are running multisite, you will need pass your database
+instance: <code>export RAILS_DB=&lt;your_database&gt; rake import:bbpress</code></p>
+
+<ul>
+<li>Cross your fingers</li>
+<li>If everything worked, deploy</li>
+<li>Be sure to have your users reset their passwords on the new Discourse
+site.</li>
+</ul><h1>
+<a name="contributing" class="anchor" href="#contributing"><span class="octicon octicon-link"></span></a>Contributing</h1>
+
+<p>Please make all pull requests to the develop branch. And example process
+for making a pull request:</p>
+
+<ol>
+<li>Fork and clone the repo</li>
+<li><code>$ git checkout -b feature-my-awesome-improvement</code></li>
+<li>Make changes and commit</li>
+<li>Push changes to Github</li>
+<li>Create a <strong>pull request</strong> from <code>feature-my-awesome-improvement</code> on
+your repo to <code>develop</code> on the main repo</li>
+<li>Celebrate your contribution to Open Source!!</li>
+</ol>
+        </section>
+
+        <aside id="sidebar">
+          <a href="https://github.com/waynegraham/discourse-import-bbpress/zipball/master" class="button">
+            <small>Download</small>
+            .zip file
+          </a>
+          <a href="https://github.com/waynegraham/discourse-import-bbpress/tarball/master" class="button">
+            <small>Download</small>
+            .tar.gz file
+          </a>
+
+          <p class="repo-owner"><a href="https://github.com/waynegraham/discourse-import-bbpress"></a> is maintained by <a href="https://github.com/waynegraham">waynegraham</a>.</p>
+
+          <p>This page was generated by <a href="pages.github.com">GitHub Pages</a> using the Architect theme by <a href="https://twitter.com/jasonlong">Jason Long</a>.</p>
+        </aside>
+      </div>
+    </div>
+
+  
+  </body>
+</html>
