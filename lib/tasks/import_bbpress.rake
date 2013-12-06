@@ -14,6 +14,8 @@ namespace :import do
     DC_ADMIN = @config['discourse_admin']
     MARKDOWN_LINEBREAKS = true
 
+    RateLimiter::disable
+
     if TEST_MODE then puts "\n*** Running in TEST mode. No changes to the Discourse database will be made.***".yellow end
 
     # Exit task if discourse admin user doesn't exist
@@ -32,7 +34,7 @@ namespace :import do
     end
 
     begin
-      # prompt for markdown settings
+      # prompt for markdown settings 
       input = ''
       puts "Do you want to enable traditional markdown-linebreaks? (linebreaks are ignored unless the line ends with two spaces)"
       print "y/N? > "
@@ -41,10 +43,16 @@ namespace :import do
       puts "\nUsing markdown linebreaks: " + MARKDOWN_LINEBREAKS.to_s.green
 
       sql_connect
+
+      puts "\n*** Fetching users from MySQL to migrate to Discourse".yellow
       sql_fetch_users
+
+      puts "\n*** Grabbing posts for import Discourse".yellow
       sql_fetch_posts
 
+
       if TEST_MODE then
+
         begin
           require 'irb'
           ARGV.clear
@@ -63,7 +71,7 @@ namespace :import do
         puts "\n*** Creating Discourse users".yellow
         create_users
 
-        puts "\n*** Importing posts into Discourse".yellow
+        puts "\n*** Importing posts and topics to Discourse".yellow
         sql_import_posts
 
         puts "\n*** Restoring settings".yellow
@@ -101,9 +109,9 @@ def sql_connect
   puts "\nConnected to SQL DB".green
 end
 
-def sql_fetch_posts
+def sql_fetch_posts(*parse)
   @bbpress_posts ||= []
-  offset = 0
+  @post_count ||= @offset = 0
 
   puts "\nCollecting Posts...".blue
 
@@ -118,9 +126,9 @@ def sql_fetch_posts
       JOIN bb_users u ON u.id = p.poster_id
       JOIN bb_forums f on t.forum_id = f.forum_id
       ORDER BY t.topic_id ASC, t.topic_title ASC, p.post_id ASC
-      LIMIT #{offset.to_s}, 500;
+      LIMIT #{@offset.to_s}, 500;
 EOQ
-    puts query.yellow if offset == 0
+    puts query.yellow if @offset == 0
     results = @sql.query query
 
     count = 0
@@ -130,19 +138,24 @@ EOQ
       count += 1
     end
 
-    puts "Batch: #{} posts".green
+    puts "Batch: (#{@offset % 500}) posts".green
+    @offset += count
 
-    offset += count
+
+    if !TEST_MODE then
+      #sql_import_posts
+      #@bbpress_posts.clear # for managing memory
+    end
+
     break if count == 0 or count < 500
   end
   puts "\nNumber of posts: #{@bbpress_posts.count.to_s}".green
 end
 
 def sql_import_posts
-  post_count = 0
   topics = {}
   @bbpress_posts.each do |bbpress_post|
-    post_count += 1
+    @post_count += 1
 
     # details on writer of the post
     user = @bbpress_users.find {|k| k['user_login'] == bbpress_post['user_login']}
@@ -162,12 +175,13 @@ def sql_import_posts
     topic_title = sanitize_topic bbpress_post['topic_title']
 
     is_new_topic = false
+
     topic = topics[bbpress_post['topic_id']]
     if topic.nil?
       is_new_topic = true
     end
 
-    progress = post_count.percent_of(@bbpress_posts.count).round.to_s
+    progress = @post_count.percent_of(@bbpress_posts.count).round.to_s
 
     text = sanitize_text bbpress_post['post_text']
 
@@ -180,6 +194,7 @@ def sql_import_posts
           "#{category.name}"
           post_creator = PostCreator.new(
             dc_user,
+            skip_validations: true,
             raw: text,
             title: topic_title,
             archetype: 'regular',
@@ -188,7 +203,7 @@ def sql_import_posts
             updated_at: Time.at(bbpress_post['post_time'])
           )
 
-          # for a new topic: also clear mail deliveries
+          ## for a new topic: also clear mail deliveries
           ActionMailer::Base.deliveries = []
     else
       print ".".yellow
@@ -196,6 +211,7 @@ def sql_import_posts
       post_creator = PostCreator.new(
         dc_user,
         raw: text,
+        skip_validations: true,
         topic_id: topic,
         created_at: Time.at(bbpress_post['post_time']),
         updated_at: Time.at(bbpress_post['post_time'])
@@ -222,9 +238,9 @@ def sql_import_posts
       post_serializer = PostSerializer.new(post, scope: true, root: false)
       post_serializer.topic_slug = post.topic.slug if post.topic.present?
       post_serializer.draft_sequence = DraftSequence.current(dc_user, post.topic.draft_key)
-      #save id to hash
+      # save id to hash
       topics[bbpress_post['topic_id']] = post.topic.id if is_new_topic
-      puts "\nTopic #{bbpress_post['post_id']} created".green if is_new_topic
+      puts "\nThe topic thread for '#{topic_title}' was created".green if is_new_topic
     end
   end
 end
