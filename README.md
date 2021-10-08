@@ -1,3 +1,7 @@
+# Don't Use This
+
+Discourse hase a build in migration script. 
+
 # What is this
 
 This set of rake tasks imports users, threads, and posts from a bbPress
